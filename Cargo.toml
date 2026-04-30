@@ -1,7 +1,5 @@
 [workspace]
 resolver = "2"
-edition = "2024"
-rust-version = "1.95"
 members = [
   # utilities
   "any_spawner",

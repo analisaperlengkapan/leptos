@@ -190,9 +190,14 @@ where
         let view_preload = self.view_fn.preload();
         let child_preload = self.child.as_ref().map(|c| c.preload());
         ::std::boxed::Box::pin(async move {
-            view_preload.await;
-            if let Some(child_preload) = child_preload {
-                child_preload.await;
+            // Run the view's preload and the child's preload concurrently so
+            // nested routes don't pay the sum of both latencies (e.g., two
+            // independent split WASM module loads).
+            match child_preload {
+                Some(child_preload) => {
+                    futures::future::join(view_preload, child_preload).await;
+                }
+                None => view_preload.await,
             }
         })
     }
