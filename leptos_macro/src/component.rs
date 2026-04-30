@@ -447,27 +447,13 @@ impl ToTokens for Model {
             #component
         };
 
-        let lazy_route_impl = if *is_lazy && !is_island {
-            let preload_name = format_ident!("__preload_{}", body_name);
-            quote! {
-                impl #impl_generics ::leptos_router::LazyRoute for #props_name #generics #where_clause {
-                    fn data() -> Self {
-                        unreachable!("LazyRoute::data() should not be called on a component-based lazy route.")
-                    }
-
-                    async fn view(this: Self) -> ::leptos::prelude::AnyView {
-                        let #props_name { #prop_names } = this;
-                        #body_name(#prop_names).await
-                    }
-
-                    async fn preload() {
-                        #preload_name().await;
-                    }
-                }
-            }
-        } else {
-            quote! {}
-        };
+        // Note: We intentionally do not generate a `LazyRoute` impl for
+        // component-based lazy routes. `Lazy<T>` calls `T::data()` to
+        // construct an initial instance of the props, which is impossible
+        // for components whose props must be supplied by the parent.
+        // Component-based lazy routes load lazily via the `Suspend` body
+        // and the `#[lazy]`-annotated body fn instead.
+        let lazy_route_impl = quote! {};
 
         let binding = if is_island {
             let island_props = if is_island_with_children
