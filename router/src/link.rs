@@ -115,8 +115,9 @@ pub fn A<H>(
     #[prop(default = true)]
     scroll: bool,
     /// Whether the route data should be preloaded when the mouse enters the link.
-    /// Defaults to `true`.
-    #[prop(default = true)]
+    /// Defaults to `false`; set to `true` to opt in to hover-triggered prefetching
+    /// of the target route's data (e.g. lazy-loaded WASM modules).
+    #[prop(default = false)]
     preload: bool,
     /// The nodes or elements to be shown inside the link.
     children: Children,
