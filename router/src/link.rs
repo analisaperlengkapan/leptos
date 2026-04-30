@@ -1,7 +1,7 @@
 use crate::{components::RouterContext, hooks::use_resolved_path};
 use leptos::{children::Children, oco::Oco, prelude::*};
 use reactive_graph::{computed::ArcMemo, owner::use_context};
-use std::{borrow::Cow, cell::RefCell, rc::Rc};
+use std::{borrow::Cow, rc::Rc};
 
 /// Describes a value that is either a static or a reactive URL, i.e.,
 /// a [`String`], a [`&str`], or a reactive `Fn() -> String`.
@@ -161,23 +161,15 @@ where
                 target=target
                 aria-current=move || if is_active() { Some("page") } else { None }
                 data-noscroll=!scroll
-                on:mouseenter={
-                    let last_prefetched: Rc<RefCell<Option<String>>> =
-                        Rc::new(RefCell::new(None));
-                    move |_| {
-                        if !preload {
-                            return;
-                        }
-                        let path = href.get_untracked();
-                        // Skip if we've already prefetched this exact path
-                        // from this link (avoids redundant spawned tasks on
-                        // repeated mouseenter events).
-                        if last_prefetched.borrow().as_deref() == Some(path.as_str()) {
-                            return;
-                        }
-                        *last_prefetched.borrow_mut() = Some(path.clone());
-                        router.prefetch(&path);
+                on:mouseenter=move |_| {
+                    if !preload {
+                        return;
                     }
+                    // Dedup is handled globally inside `router.prefetch`,
+                    // so we don't need a per-link `last_prefetched` cell.
+                    // Hovering N links to the same path spawns at most one
+                    // prefetch task across the entire app.
+                    router.prefetch(&href.get_untracked());
                 }
             >
 

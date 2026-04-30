@@ -25,6 +25,7 @@ use reactive_graph::{
 };
 use std::{
     borrow::Cow,
+    collections::HashSet,
     fmt::{Debug, Display},
     future::Future,
     mem,
@@ -122,6 +123,7 @@ where
         query_mutations: Default::default(),
         location_provider,
         prefetcher: Default::default(),
+        prefetched: Default::default(),
     });
 
     let children = children.into_inner();
@@ -143,6 +145,11 @@ pub(crate) struct RouterContext {
     // the `RouterContext` earlier in the view tree (e.g. a top-level nav bar
     // rendered before `<Routes>`).
     pub prefetcher: ArcStoredValue<Option<Arc<dyn Prefetcher>>>,
+    // Global set of paths that have already been prefetched (or are in flight)
+    // since this `RouterContext` was created. Shared across all `<A>` links so
+    // that hovering 10 different links pointing at the same route only spawns
+    // one prefetch task for the entire app, not one per link.
+    pub prefetched: ArcStoredValue<HashSet<String>>,
 }
 
 impl RouterContext {
@@ -220,10 +227,35 @@ impl RouterContext {
     }
 
     pub fn prefetch(&self, path: &str) {
+        // Normalize once here so dedup is consistent regardless of the link's
+        // raw href (e.g. `/users?page=1` and `/users#x` collapse to `/users`).
+        let normalized =
+            path.split(['?', '#']).next().unwrap_or(path).to_string();
+
+        // Skip if the user is already on this path — no point prefetching the
+        // route they're currently viewing.
+        if self.current_url.read_untracked().path() == normalized {
+            return;
+        }
+
+        // Global dedup: if we've already prefetched (or started prefetching)
+        // this path, do nothing. This avoids spawning N tasks for N links to
+        // the same route across the entire view tree.
+        {
+            let mut prefetched = self.prefetched.write_value();
+            if !prefetched.insert(normalized.clone()) {
+                return;
+            }
+        }
+
         let prefetcher = self.prefetcher.read_value().clone();
         if let Some(prefetcher) = prefetcher {
-            let fut = prefetcher.prefetch(path);
+            let fut = prefetcher.prefetch(&normalized);
             leptos::task::spawn_local(fut);
+        } else {
+            // No prefetcher provided yet — release the slot so a later
+            // attempt (after `<Routes>` mounts) can succeed.
+            self.prefetched.write_value().remove(&normalized);
         }
     }
 }
