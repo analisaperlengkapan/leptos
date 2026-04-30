@@ -48,9 +48,13 @@ where
     ) -> ::std::pin::Pin<
         ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
     > {
-        let data = self.data.clone();
+        // Note: we intentionally do NOT call `T::data()` here. Prefetching
+        // operates on a temporary route match whose `Lazy<T>` instance is
+        // discarded; the actual navigation creates a separate `Lazy<T>` with
+        // its own `ArcStoredValue`, so any data written here would never be
+        // consumed. `T::preload()` is the useful side-effect — typically
+        // loading a split WASM module, which is a global one-time effect.
         ::std::boxed::Box::pin(async move {
-            *data.write_value() = Some(T::data());
             T::preload().await;
         })
     }

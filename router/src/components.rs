@@ -302,6 +302,9 @@ where
     Defs::Match: Send,
 {
     fn prefetch(&self, path: &str) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        // Strip query string and hash fragment so paths like `/users?page=1`
+        // or `/users#section` still match a route defined for `/users`.
+        let path = path.split(['?', '#']).next().unwrap_or(path);
         let matched = self.routes.match_route(path);
         Box::pin(async move {
             if let Some(matched) = matched {
