@@ -962,7 +962,7 @@ fn err_ws_in_type(
     inputs: &Punctuated<ServerFnArg, syn::token::Comma>,
 ) -> Option<Type> {
     inputs.into_iter().find_map(|pat| {
-        if let syn::Type::Path(ref pat) = *pat.arg.ty {
+        if let syn::Type::Path(pat) = &*pat.arg.ty {
             if pat.path.segments[0].ident != "BoxedStream" {
                 return None;
             }
@@ -986,7 +986,7 @@ fn err_ws_in_type(
 }
 
 fn err_ws_out_type(output_ty: &Option<Type>) -> Result<Option<Type>> {
-    if let Some(syn::Type::Path(ref pat)) = output_ty {
+    if let Some(syn::Type::Path(pat)) = output_ty {
         if pat.path.segments[0].ident == "BoxedStream" {
             if let PathArguments::AngleBracketed(args) =
                 &pat.path.segments[0].arguments

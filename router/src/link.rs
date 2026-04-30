@@ -114,6 +114,10 @@ pub fn A<H>(
     /// If `true`, the router will scroll to the top of the window at the end of navigation. Defaults to `true`.
     #[prop(default = true)]
     scroll: bool,
+    /// Whether the route data should be preloaded when the mouse enters the link.
+    /// Defaults to `true`.
+    #[prop(default = true)]
+    preload: bool,
     /// The nodes or elements to be shown inside the link.
     children: Children,
 ) -> impl IntoView + 'static
@@ -127,9 +131,11 @@ where
         children: Children,
         strict_trailing_slash: bool,
         scroll: bool,
+        preload: bool,
     ) -> impl IntoView {
-        let RouterContext { current_url, .. } =
-            use_context().expect("tried to use <A/> outside a <Router/>.");
+        let router = use_context::<RouterContext>()
+            .expect("tried to use <A/> outside a <Router/>.");
+        let current_url = router.current_url.clone();
         let is_active = {
             let href = href.clone();
             move || {
@@ -147,10 +153,18 @@ where
 
         view! {
             <a
-                href=move || href.get()
+                href={
+                    let href = href.clone();
+                    move || href.get()
+                }
                 target=target
                 aria-current=move || if is_active() { Some("page") } else { None }
                 data-noscroll=!scroll
+                on:mouseenter=move |_| {
+                    if preload {
+                        router.prefetch(&href.get_untracked());
+                    }
+                }
             >
 
                 {children()}
@@ -159,7 +173,15 @@ where
     }
 
     let href = use_resolved_path(move || href.to_href()());
-    inner(href, target, exact, children, strict_trailing_slash, scroll)
+    inner(
+        href,
+        target,
+        exact,
+        children,
+        strict_trailing_slash,
+        scroll,
+        preload,
+    )
 }
 
 // Test if `href` is active for `location`.  Assumes _both_ `href` and `location` begin with a `'/'`.

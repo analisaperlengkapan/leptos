@@ -14,6 +14,11 @@ pub struct AnyNestedMatch {
     as_matched: for<'a> fn(&'a ErasedLocal) -> &'a str,
     into_view_and_child:
         fn(ErasedLocal) -> (AnyChooseView, Option<AnyNestedMatch>),
+    preload: fn(
+        &ErasedLocal,
+    ) -> ::std::pin::Pin<
+        ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
+    >,
 }
 
 impl Debug for AnyNestedMatch {
@@ -67,12 +72,22 @@ where
             )
         }
 
+        fn preload<T: MatchInterface + 'static>(
+            value: &ErasedLocal,
+        ) -> ::std::pin::Pin<
+            ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
+        > {
+            let value = value.get_ref::<T>();
+            value.preload()
+        }
+
         AnyNestedMatch {
             value,
             to_params: to_params::<T>,
             as_id: as_id::<T>,
             as_matched: as_matched::<T>,
             into_view_and_child: into_view_and_child::<T>,
+            preload: preload::<T>,
         }
     }
 }
@@ -96,5 +111,13 @@ impl MatchInterface for AnyNestedMatch {
 
     fn into_view_and_child(self) -> (impl ChooseView, Option<Self::Child>) {
         (self.into_view_and_child)(self.value)
+    }
+
+    fn preload(
+        &self,
+    ) -> ::std::pin::Pin<
+        ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
+    > {
+        (self.preload)(&self.value)
     }
 }

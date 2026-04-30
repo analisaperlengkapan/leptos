@@ -9,7 +9,11 @@ where
 {
     fn choose(self) -> impl Future<Output = AnyView>;
 
-    fn preload(&self) -> impl Future<Output = ()>;
+    fn preload(
+        &self,
+    ) -> ::std::pin::Pin<
+        ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
+    >;
 }
 
 impl<F, View> ChooseView for F
@@ -21,7 +25,13 @@ where
         self().into_any()
     }
 
-    async fn preload(&self) {}
+    fn preload(
+        &self,
+    ) -> ::std::pin::Pin<
+        ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
+    > {
+        ::std::boxed::Box::pin(async {})
+    }
 }
 
 impl<T> ChooseView for Lazy<T>
@@ -33,9 +43,16 @@ where
         T::view(data).await
     }
 
-    async fn preload(&self) {
-        *self.data.write_value() = Some(T::data());
-        T::preload().await;
+    fn preload(
+        &self,
+    ) -> ::std::pin::Pin<
+        ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
+    > {
+        let data = self.data.clone();
+        ::std::boxed::Box::pin(async move {
+            *data.write_value() = Some(T::data());
+            T::preload().await;
+        })
     }
 }
 
@@ -44,7 +61,7 @@ pub trait LazyRoute: Send + 'static {
 
     fn view(this: Self) -> impl Future<Output = AnyView>;
 
-    fn preload() -> impl Future<Output = ()> {
+    fn preload() -> impl Future<Output = ()> + Send {
         async {}
     }
 }
@@ -84,7 +101,13 @@ impl ChooseView for () {
         ().into_any()
     }
 
-    async fn preload(&self) {}
+    fn preload(
+        &self,
+    ) -> ::std::pin::Pin<
+        ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
+    > {
+        ::std::boxed::Box::pin(async {})
+    }
 }
 
 impl<A, B> ChooseView for Either<A, B>
@@ -99,10 +122,14 @@ where
         }
     }
 
-    async fn preload(&self) {
+    fn preload(
+        &self,
+    ) -> ::std::pin::Pin<
+        ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
+    > {
         match self {
-            Either::Left(f) => f.preload().await,
-            Either::Right(f) => f.preload().await,
+            Either::Left(f) => f.preload(),
+            Either::Right(f) => f.preload(),
         }
     }
 }
@@ -121,9 +148,13 @@ macro_rules! tuples {
                 }
             }
 
-            async fn preload(&self) {
+            fn preload(
+                &self,
+            ) -> ::std::pin::Pin<
+                ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
+            > {
                 match self {
-                    $($either::$ty(f) => f.preload().await,)*
+                    $($either::$ty(f) => f.preload(),)*
                 }
             }
         }

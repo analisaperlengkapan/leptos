@@ -151,7 +151,7 @@ where
             parent,
             marker,
             hashed_items,
-            ref mut rendered_items,
+            rendered_items,
         } = state;
         let new_items = self.items.into_iter().flatten();
         let (capacity, _) = new_items.size_hint();

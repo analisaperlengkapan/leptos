@@ -9,7 +9,7 @@ pub struct AnyChooseView {
     clone: fn(&Erased) -> AnyChooseView,
     #[allow(clippy::type_complexity)]
     choose: fn(Erased) -> Pin<Box<dyn Future<Output = AnyView>>>,
-    preload: for<'a> fn(&'a Erased) -> Pin<Box<dyn Future<Output = ()> + 'a>>,
+    preload: fn(&Erased) -> Pin<Box<dyn Future<Output = ()> + Send>>,
 }
 
 impl Clone for AnyChooseView {
@@ -30,10 +30,10 @@ impl AnyChooseView {
             value.into_inner::<T>().choose().boxed_local()
         }
 
-        fn preload<'a, T: ChooseView>(
-            value: &'a Erased,
-        ) -> Pin<Box<dyn Future<Output = ()> + 'a>> {
-            value.get_ref::<T>().preload().boxed_local()
+        fn preload<T: ChooseView>(
+            value: &Erased,
+        ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+            value.get_ref::<T>().preload()
         }
 
         Self {
@@ -50,7 +50,11 @@ impl ChooseView for AnyChooseView {
         (self.choose)(self.value).await
     }
 
-    async fn preload(&self) {
-        (self.preload)(&self.value).await;
+    fn preload(
+        &self,
+    ) -> ::std::pin::Pin<
+        ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
+    > {
+        (self.preload)(&self.value)
     }
 }

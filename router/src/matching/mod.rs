@@ -110,6 +110,12 @@ pub trait MatchInterface {
     fn as_matched(&self) -> &str;
 
     fn into_view_and_child(self) -> (impl ChooseView, Option<Self::Child>);
+
+    fn preload(
+        &self,
+    ) -> ::std::pin::Pin<
+        ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
+    >;
 }
 
 pub trait MatchParams {

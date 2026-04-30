@@ -177,8 +177,6 @@ impl ToTokens for Model {
         }
 
         //body.sig.ident = format_ident!("__{}", body.sig.ident);
-        #[allow(clippy::redundant_clone)] // false positive
-        let body_name = body.sig.ident.clone();
 
         let (impl_generics, generics, where_clause) =
             body.sig.generics.split_for_impl();
@@ -316,7 +314,11 @@ impl ToTokens for Model {
             quote! {}
         };
 
-        let body_name = unmodified_fn_name_from_fn_name(&body_name);
+        let body_name = if *is_lazy && !is_island {
+            lazy_component_fn_name(&body.sig.ident)
+        } else {
+            unmodified_fn_name_from_fn_name(&body.sig.ident)
+        };
         let body_expr = if is_island {
             quote! {
                 ::leptos::reactive::owner::Owner::new().with(|| {
@@ -327,6 +329,12 @@ impl ToTokens for Model {
                     })
                 })
             }
+        } else if *is_lazy {
+            quote! {
+                ::leptos::prelude::Suspend::new(async move {
+                    #body_name(#prop_names).await
+                })
+            }
         } else {
             quote! {
                 #body_name(#prop_names)
@@ -335,6 +343,16 @@ impl ToTokens for Model {
 
         let component = if *is_transparent {
             body_expr
+        } else if *is_lazy && !is_island {
+            quote! {
+                ::leptos::reactive::graph::untrack_with_diagnostics(
+                    move || {
+                        #tracing_guard_expr
+                        #tracing_props_expr
+                        #body_expr
+                    }
+                )
+            }
         } else if cfg!(feature = "__internal_erase_components") {
             quote! {
                 ::leptos::prelude::IntoMaybeErased::into_maybe_erased(
@@ -423,10 +441,31 @@ impl ToTokens for Model {
             }
         };
 
-        let body = quote! {
+        let fn_body = quote! {
             #destructure_props
             #tracing_span_expr
             #component
+        };
+
+        let lazy_route_impl = if *is_lazy && !is_island {
+            let preload_name = format_ident!("__preload_{}", body_name);
+            quote! {
+                impl #impl_generics ::leptos_router::LazyRoute for #props_name #generics #where_clause {
+                    fn data() -> Self {
+                        unreachable!("LazyRoute::data() should not be called on a component-based lazy route.")
+                    }
+
+                    async fn view(this: Self) -> ::leptos::prelude::AnyView {
+                        #body_name(this).await
+                    }
+
+                    async fn preload() {
+                        #preload_name().await;
+                    }
+                }
+            }
+        } else {
+            quote! {}
         };
 
         let binding = if is_island {
@@ -606,6 +645,8 @@ impl ToTokens for Model {
                 }
             }
 
+            #lazy_route_impl
+
             // TODO restore dyn attrs
             /*impl #impl_generics ::leptos::DynAttrs for #props_name #generics #where_clause {
                 fn dyn_attrs(mut self, v: Vec<(&'static str, ::leptos::Attribute)>) -> Self {
@@ -624,9 +665,26 @@ impl ToTokens for Model {
             ) #ret
             #where_clause
             {
-                #body
+                #fn_body
             }
         };
+
+        if *is_lazy && !is_island {
+            let mut lazy_body = body.clone();
+            lazy_body.sig.ident = body_name.clone();
+            lazy_body.sig.output = parse_quote!(-> ::leptos::prelude::AnyView);
+
+            let original_block = &body.block;
+            lazy_body.block = parse_quote!({
+                use ::leptos::prelude::IntoAny;
+                #original_block.into_any()
+            });
+
+            tokens.append_all(quote! {
+                #[::leptos::prelude::lazy]
+                #lazy_body
+            });
+        }
 
         tokens.append_all(output)
     }
@@ -1374,6 +1432,13 @@ fn prop_to_doc(
 pub fn unmodified_fn_name_from_fn_name(ident: &Ident) -> Ident {
     Ident::new(
         &format!("__component_{}", ident.to_string().to_case(Snake)),
+        ident.span(),
+    )
+}
+
+fn lazy_component_fn_name(ident: &Ident) -> Ident {
+    Ident::new(
+        &format!("__lazy_component_{}", ident.to_string().to_case(Snake)),
         ident.span(),
     )
 }

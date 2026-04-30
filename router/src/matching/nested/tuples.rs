@@ -25,6 +25,14 @@ impl MatchInterface for () {
     fn into_view_and_child(self) -> (impl ChooseView, Option<Self::Child>) {
         ((), None)
     }
+
+    fn preload(
+        &self,
+    ) -> ::std::pin::Pin<
+        ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
+    > {
+        ::std::boxed::Box::pin(async {})
+    }
 }
 
 impl MatchNestedRoutes for () {
@@ -77,6 +85,14 @@ where
 
     fn into_view_and_child(self) -> (impl ChooseView, Option<Self::Child>) {
         self.0.into_view_and_child()
+    }
+
+    fn preload(
+        &self,
+    ) -> ::std::pin::Pin<
+        ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
+    > {
+        self.0.preload()
     }
 }
 
@@ -149,6 +165,17 @@ where
                 let (view, child) = i.into_view_and_child();
                 (Either::Right(view), child.map(Either::Right))
             }
+        }
+    }
+
+    fn preload(
+        &self,
+    ) -> ::std::pin::Pin<
+        ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
+    > {
+        match self {
+            Either::Left(i) => i.preload(),
+            Either::Right(i) => i.preload(),
         }
     }
 }
@@ -278,6 +305,16 @@ macro_rules! tuples {
                         let (view, child) = i.into_view_and_child();
                         ($either::$ty(view), child.map($either::$ty))
                     })*
+                }
+            }
+
+            fn preload(
+                &self,
+            ) -> ::std::pin::Pin<
+                ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
+            > {
+                match self {
+                    $($either::$ty(i) => i.preload(),)*
                 }
             }
         }

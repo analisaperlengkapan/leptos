@@ -560,23 +560,23 @@ pub fn include_view(tokens: TokenStream) -> TokenStream {
 #[proc_macro_error2::proc_macro_error]
 #[proc_macro_attribute]
 pub fn component(args: proc_macro::TokenStream, s: TokenStream) -> TokenStream {
-    let is_transparent = if !args.is_empty() {
-        let transparent = parse_macro_input!(args as syn::Ident);
+    let (is_transparent, is_lazy) = if !args.is_empty() {
+        let arg = parse_macro_input!(args as syn::Ident);
 
-        if transparent != "transparent" {
+        if arg != "transparent" && arg != "lazy" {
             abort!(
-                transparent,
-                "only `transparent` is supported";
-                help = "try `#[component(transparent)]` or `#[component]`"
+                arg,
+                "only `transparent` or `lazy` are supported";
+                help = "try `#[component(transparent)]`, `#[component(lazy)]`, or `#[component]`"
             );
         }
 
-        true
+        (arg == "transparent", arg == "lazy")
     } else {
-        false
+        (false, false)
     };
 
-    component_macro(s, is_transparent, false, None)
+    component_macro(s, is_transparent, is_lazy, None)
 }
 
 /// Defines a component as an interactive island when you are using the
@@ -682,7 +682,7 @@ fn component_macro(
     let mut dummy = syn::parse::<DummyModel>(s.clone());
     let parse_result = syn::parse::<component::Model>(s);
 
-    if let (Ok(ref mut unexpanded), Ok(model)) = (&mut dummy, parse_result) {
+    if let (Ok(unexpanded), Ok(model)) = (&mut dummy, parse_result) {
         let expanded = model
             .is_transparent(is_transparent)
             .is_lazy(is_lazy)

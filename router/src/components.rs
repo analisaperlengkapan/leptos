@@ -8,6 +8,7 @@ use crate::{
     location::{
         BrowserUrl, Location, LocationChange, LocationProvider, State, Url,
     },
+    matching::MatchInterface,
     navigate::NavigateOptions,
     nested_router::NestedRoutesView,
     resolve_path::resolve_path,
@@ -25,10 +26,18 @@ use reactive_graph::{
 use std::{
     borrow::Cow,
     fmt::{Debug, Display},
+    future::Future,
     mem,
+    pin::Pin,
     sync::Arc,
     time::Duration,
 };
+
+/// A trait for prefetching route data.
+pub trait Prefetcher: Send + Sync {
+    /// Prefetches the data for the given path.
+    fn prefetch(&self, path: &str) -> Pin<Box<dyn Future<Output = ()> + Send>>;
+}
 
 /// A wrapper that allows passing route definitions as children to a component like [`Routes`],
 /// [`FlatRoutes`], [`ParentRoute`], or [`ProtectedParentRoute`].
@@ -112,6 +121,7 @@ where
         set_is_routing,
         query_mutations: Default::default(),
         location_provider,
+        prefetcher: None,
     });
 
     let children = children.into_inner();
@@ -128,6 +138,7 @@ pub(crate) struct RouterContext {
     pub query_mutations:
         ArcStoredValue<Vec<(Oco<'static, str>, Option<String>)>>,
     pub location_provider: Option<BrowserUrl>,
+    pub prefetcher: Option<Arc<dyn Prefetcher>>,
 }
 
 impl RouterContext {
@@ -203,6 +214,13 @@ impl RouterContext {
         let base = self.base.as_deref().unwrap_or_default();
         resolve_path(base, path, from)
     }
+
+    pub fn prefetch(&self, path: &str) {
+        if let Some(prefetcher) = &self.prefetcher {
+            let fut = prefetcher.prefetch(path);
+            leptos::task::spawn_local(fut);
+        }
+    }
 }
 
 impl Debug for RouterContext {
@@ -227,7 +245,8 @@ pub fn Routes<Defs, FallbackFn, Fallback>(
     children: RouteChildren<Defs>,
 ) -> impl IntoView
 where
-    Defs: MatchNestedRoutes + Clone + Send + 'static,
+    Defs: MatchNestedRoutes + Clone + Send + Sync + 'static,
+    Defs::Match: Send,
     FallbackFn: FnOnce() -> Fallback + Clone + Send + 'static,
     Fallback: IntoView + 'static,
 {
@@ -248,6 +267,11 @@ where
         children.into_inner(),
         base.clone().unwrap_or_default(),
     );
+
+    provide_prefetcher(RoutePrefetcher {
+        routes: routes.clone(),
+    });
+
     let outer_owner =
         Owner::current().expect("creating Routes, but no Owner was found");
     move || {
@@ -268,6 +292,25 @@ where
     }
 }
 
+struct RoutePrefetcher<Defs> {
+    routes: RouteDefs<Defs>,
+}
+
+impl<Defs> Prefetcher for RoutePrefetcher<Defs>
+where
+    Defs: MatchNestedRoutes + Clone + Send + Sync + 'static,
+    Defs::Match: Send,
+{
+    fn prefetch(&self, path: &str) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        let matched = self.routes.match_route(path);
+        Box::pin(async move {
+            if let Some(matched) = matched {
+                matched.preload().await;
+            }
+        })
+    }
+}
+
 #[component(transparent)]
 pub fn FlatRoutes<Defs, FallbackFn, Fallback>(
     /// A function that returns the view that should be shown if no route is matched.
@@ -280,7 +323,8 @@ pub fn FlatRoutes<Defs, FallbackFn, Fallback>(
     children: RouteChildren<Defs>,
 ) -> impl IntoView
 where
-    Defs: MatchNestedRoutes + Clone + Send + 'static,
+    Defs: MatchNestedRoutes + Clone + Send + Sync + 'static,
+    Defs::Match: Send,
     FallbackFn: FnOnce() -> Fallback + Clone + Send + 'static,
     Fallback: IntoView + 'static,
 {
@@ -304,6 +348,10 @@ where
         children.into_inner(),
         base.clone().unwrap_or_default(),
     );
+
+    provide_prefetcher(RoutePrefetcher {
+        routes: routes.clone(),
+    });
 
     let outer_owner =
         Owner::current().expect("creating Router, but no Owner was found");
@@ -624,6 +672,14 @@ pub fn provide_server_redirect(handler: impl Fn(&str) + Send + Sync + 'static) {
     provide_context(ServerRedirectFunction {
         f: Arc::new(handler),
     })
+}
+
+/// Provides a prefetcher to the router.
+pub fn provide_prefetcher(prefetcher: impl Prefetcher + 'static) {
+    if let Some(mut router) = use_context::<RouterContext>() {
+        router.prefetcher = Some(Arc::new(prefetcher));
+        provide_context(router);
+    }
 }
 
 /// A visible indicator that the router is in the process of navigating

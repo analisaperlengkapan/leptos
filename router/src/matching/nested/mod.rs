@@ -181,6 +181,21 @@ where
     fn into_view_and_child(self) -> (impl ChooseView, Option<Self::Child>) {
         (self.view_fn, self.child)
     }
+
+    fn preload(
+        &self,
+    ) -> ::std::pin::Pin<
+        ::std::boxed::Box<dyn ::std::future::Future<Output = ()> + Send>,
+    > {
+        let view_preload = self.view_fn.preload();
+        let child_preload = self.child.as_ref().map(|c| c.preload());
+        ::std::boxed::Box::pin(async move {
+            view_preload.await;
+            if let Some(child_preload) = child_preload {
+                child_preload.await;
+            }
+        })
+    }
 }
 
 impl<Segments, Children, Data, View> MatchNestedRoutes
