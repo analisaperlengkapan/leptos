@@ -456,7 +456,8 @@ impl ToTokens for Model {
                     }
 
                     async fn view(this: Self) -> ::leptos::prelude::AnyView {
-                        #body_name(this).await
+                        let #props_name { #prop_names } = this;
+                        #body_name(#prop_names).await
                     }
 
                     async fn preload() {
