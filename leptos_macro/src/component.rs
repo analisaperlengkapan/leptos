@@ -668,6 +668,7 @@ impl ToTokens for Model {
             });
 
             tokens.append_all(quote! {
+                #[doc(hidden)]
                 #[::leptos::prelude::lazy]
                 #lazy_body
             });

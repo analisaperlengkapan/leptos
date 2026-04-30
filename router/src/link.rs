@@ -161,16 +161,13 @@ where
                 target=target
                 aria-current=move || if is_active() { Some("page") } else { None }
                 data-noscroll=!scroll
-                on:mouseenter=move |_| {
-                    if !preload {
-                        return;
-                    }
+                on:mouseenter=preload.then_some(move |_: leptos::ev::MouseEvent| {
                     // Dedup is handled globally inside `router.prefetch`,
                     // so we don't need a per-link `last_prefetched` cell.
                     // Hovering N links to the same path spawns at most one
                     // prefetch task across the entire app.
                     router.prefetch(&href.get_untracked());
-                }
+                })
             >
 
                 {children()}
