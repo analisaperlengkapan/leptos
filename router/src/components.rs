@@ -121,7 +121,7 @@ where
         set_is_routing,
         query_mutations: Default::default(),
         location_provider,
-        prefetcher: None,
+        prefetcher: Default::default(),
     });
 
     let children = children.into_inner();
@@ -138,7 +138,11 @@ pub(crate) struct RouterContext {
     pub query_mutations:
         ArcStoredValue<Vec<(Oco<'static, str>, Option<String>)>>,
     pub location_provider: Option<BrowserUrl>,
-    pub prefetcher: Option<Arc<dyn Prefetcher>>,
+    // Stored via `ArcStoredValue` so that a later call to `provide_prefetcher`
+    // (e.g. from inside `<Routes>`) is visible to `<A>` links that captured
+    // the `RouterContext` earlier in the view tree (e.g. a top-level nav bar
+    // rendered before `<Routes>`).
+    pub prefetcher: ArcStoredValue<Option<Arc<dyn Prefetcher>>>,
 }
 
 impl RouterContext {
@@ -216,7 +220,8 @@ impl RouterContext {
     }
 
     pub fn prefetch(&self, path: &str) {
-        if let Some(prefetcher) = &self.prefetcher {
+        let prefetcher = self.prefetcher.read_value().clone();
+        if let Some(prefetcher) = prefetcher {
             let fut = prefetcher.prefetch(path);
             leptos::task::spawn_local(fut);
         }
@@ -679,10 +684,14 @@ pub fn provide_server_redirect(handler: impl Fn(&str) + Send + Sync + 'static) {
 }
 
 /// Provides a prefetcher to the router.
+///
+/// This mutates the shared `prefetcher` slot on the existing `RouterContext`,
+/// so any `<A>` component that already captured the context (e.g. one
+/// rendered earlier in the view tree, before `<Routes>`) will see the
+/// prefetcher on its next `prefetch()` call.
 pub fn provide_prefetcher(prefetcher: impl Prefetcher + 'static) {
-    if let Some(mut router) = use_context::<RouterContext>() {
-        router.prefetcher = Some(Arc::new(prefetcher));
-        provide_context(router);
+    if let Some(router) = use_context::<RouterContext>() {
+        *router.prefetcher.write_value() = Some(Arc::new(prefetcher));
     }
 }
 
